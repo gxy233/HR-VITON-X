@@ -56,6 +56,7 @@ def get_opt():
     parser.add_argument('--dis_checkpoint', type=str, default='', help='dis checkpoint')
     parser.add_argument('--Tgen_checkpoint', type=str, default='./checkpoints/image_generator_tea/gen.pth', help='Teacher image_gen checkpoint')
     parser.add_argument('--Tdis_checkpoint', type=str, default='./checkpoints/image_discriminator_tea/D_step_260000.pth', help='Teacher image_dis checkpoint')
+    parser.add_argument('--Sgen_checkpoint', type=str, default=None, help='pretranin Student image_gen checkpoint')
     
     
     
@@ -667,7 +668,12 @@ def main():
         assert(torch.cuda.is_available())
         Sgenerator.cuda()
         Tgenerator.cuda()
-    Sgenerator.init_weights(opt.init_type, opt.init_variance)
+    
+    if opt.Sgen_checkpoint:
+        Sgenerator.load_state_dict(torch.load(opt.Sgen_checkpoint), strict=False)
+    else:
+        Sgenerator.init_weights(opt.init_type, opt.init_variance)
+    
     # Tgenerator.init_weights(opt.init_type, opt.init_variance)
     Tdiscriminator = create_network(MultiscaleDiscriminator, opt)
     # Tdiscriminator = load_checkpoint(discriminator,opt.Tdis_checkpoint,opt) 
