@@ -8,7 +8,7 @@ import os
 import time
 from cp_dataset_test import CPDatasetTest, CPDataLoader
 
-from networks import ConditionGenerator, load_checkpoint, make_grid
+from networks_distill import SConditionGenerator, load_checkpoint, make_grid
 from network_generator import SPADEGenerator
 from tensorboardX import SummaryWriter
 from utils import *
@@ -74,6 +74,7 @@ def get_opt():
     opt = parser.parse_args()
     return opt
 
+
 def load_checkpoint_G(model, checkpoint_path,opt):
     if not os.path.exists(checkpoint_path):
         print("Invalid path!")
@@ -106,6 +107,7 @@ def test(opt, test_loader, tocg, generator):
     grid_dir = os.path.join('./output', opt.test_name,
                              opt.datamode, opt.datasetting, 'generator', 'grid')
     
+
     os.makedirs(grid_dir, exist_ok=True)
     
     os.makedirs(output_dir, exist_ok=True)
@@ -257,7 +259,7 @@ def main():
     # tocg
     input1_nc = 4  # cloth + cloth-mask
     input2_nc = opt.semantic_nc + 3  # parse_agnostic + densepose
-    tocg = ConditionGenerator(opt, input1_nc=input1_nc, input2_nc=input2_nc, output_nc=opt.output_nc, ngf=96, norm_layer=nn.BatchNorm2d)
+    tocg = SConditionGenerator(opt, input1_nc=input1_nc, input2_nc=input2_nc, output_nc=opt.output_nc, ngf=96, norm_layer=nn.BatchNorm2d)
        
     # generator
     opt.semantic_nc = 7

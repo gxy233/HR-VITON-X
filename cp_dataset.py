@@ -240,7 +240,8 @@ class CPDataset(data.Dataset):
             # visualization & GT
             'image':    im,         # for visualization
             }
-
+ 
+  
         return result
 
     def __len__(self):
@@ -409,13 +410,14 @@ class CPDataLoader(object):
             train_sampler = torch.utils.data.sampler.RandomSampler(dataset)
         else:
             train_sampler = None
-
+       
         self.data_loader = torch.utils.data.DataLoader(
                 dataset, batch_size=opt.batch_size, shuffle=(train_sampler is None),
                 num_workers=opt.workers, pin_memory=True, drop_last=True, sampler=train_sampler)
         self.dataset = dataset
         self.data_iter = self.data_loader.__iter__()
 
+       
     def next_batch(self):
         try:
             batch = self.data_iter.__next__()
