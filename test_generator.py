@@ -7,14 +7,19 @@ import argparse
 import os
 import time
 from cp_dataset_test import CPDatasetTest, CPDataLoader
+import numpy as np
 
 from networks import ConditionGenerator, load_checkpoint, make_grid
 from network_generator import SPADEGenerator
 from tensorboardX import SummaryWriter
 from utils import *
-
+import torchvision.transforms as Transforms
+from torchmetrics.image.kid import KernelInceptionDistance
+from torchmetrics.image.fid import FrechetInceptionDistance
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 import torchgeometry as tgm
 from collections import OrderedDict
+from skimage.metrics import structural_similarity as ssim
 
 def remove_overlap(seg_out, warped_cm):
     
@@ -31,9 +36,11 @@ def get_opt():
     parser.add_argument('--fp16', action='store_true', help='use amp')
     # Cuda availability
     parser.add_argument('--cuda',default=False, help='cuda or cpu')
+    parser.add_argument("--enc_type", type=str, default='res')
+    parser.add_argument('--metric_freq', type=int, default=10)
 
     parser.add_argument('--test_name', type=str, default='test', help='test name')
-    parser.add_argument("--dataroot", default="./data/zalando-hd-resize")
+    parser.add_argument("--dataroot", default="./data")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
     parser.add_argument("--output_dir", type=str, default="./Output")
@@ -85,8 +92,6 @@ def load_checkpoint_G(model, checkpoint_path,opt):
     if opt.cuda :
         model.cuda()
 
-
-
 def test(opt, test_loader, tocg, generator):
     gauss = tgm.image.GaussianBlur((15, 15), (3, 3))
     if opt.cuda:
@@ -112,9 +117,19 @@ def test(opt, test_loader, tocg, generator):
     
     num = 0
     iter_start_time = time.time()
+    gt_list = []
+    pred_list = []
+    ssim_list = []
+    lpips_list = []
+    res = {'lpips':[],
+           'ssim':[],
+           'kid': [],
+           'fid': []}
+    lpips_func = LearnedPerceptualImagePatchSimilarity(net_type='alex', normalize=True)
     with torch.no_grad():
         for inputs in test_loader.data_loader:
-
+            # print('c_name', inputs['c_name'])
+            # print('img', inputs['im_name'])
             if opt.cuda :
                 pose_map = inputs['pose'].cuda()
                 pre_clothes_mask = inputs['cloth_mask'][opt.datasetting].cuda()
@@ -125,7 +140,7 @@ def test(opt, test_loader, tocg, generator):
                 densepose = inputs['densepose'].cuda()
                 im = inputs['image']
                 input_label, input_parse_agnostic = label.cuda(), parse_agnostic.cuda()
-                pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(float)).cuda()
             else :
                 pose_map = inputs['pose']
                 pre_clothes_mask = inputs['cloth_mask'][opt.datasetting]
@@ -136,10 +151,7 @@ def test(opt, test_loader, tocg, generator):
                 densepose = inputs['densepose']
                 im = inputs['image']
                 input_label, input_parse_agnostic = label, parse_agnostic
-                pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float))
-
-
-
+                pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(float))
             # down
             pose_map_down = F.interpolate(pose_map, size=(256, 192), mode='bilinear')
             pre_clothes_mask_down = F.interpolate(pre_clothes_mask, size=(256, 192), mode='nearest')
@@ -160,9 +172,9 @@ def test(opt, test_loader, tocg, generator):
             
             # warped cloth mask one hot
             if opt.cuda :
-                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
             else :
-                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float))
+                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float))
 
             if opt.clothmask_composition != 'no_composition':
                 if opt.clothmask_composition == 'detach':
@@ -231,10 +243,58 @@ def test(opt, test_loader, tocg, generator):
                 
             # save output
             save_images(output, unpaired_names, output_dir)
-                
+            if opt.datasetting == 'paired':
+                real = save_images(im, 'any', '')
+                pred = save_images(output, 'any', '')
+                real_np = np.asarray(real.convert('L'))
+                pred_np = np.asarray(pred.convert('L'))
+                T1 = Transforms.PILToTensor()
+                T3 = Transforms.Compose([Transforms.Resize((299, 299)),
+                        Transforms.ToTensor()])
+                pred = T3(pred)
+                real = T3(real)
+                gt_list.append(real)
+                pred_list.append(pred)
+                ssim_list.append(ssim(real_np, pred_np, data_range=255, gaussian_weights=True, use_sample_covariance=False))
+                lpips_list.append(lpips_func(pred.unsqueeze(0), real.unsqueeze(0)))
+
+                if len(gt_list) == opt.metric_freq:
+                    print('calculating metric')
+                    size = len(pred_list)
+                    kid = KernelInceptionDistance(subset_size=size, normalize=True)
+                    fid = FrechetInceptionDistance(normalize=True)
+                    real_tensor = torch.stack(gt_list, dim=0)
+                    pred_tensor = torch.stack(pred_list, dim=0)
+                    kid.update(real_tensor, real=True)
+                    kid.update(pred_tensor, real=False)
+                    fid.update(real_tensor, real=True)
+                    fid.update(pred_tensor, real=False)
+                    kid_res = kid.compute()[1] * 1e6
+                    fid_res = fid.compute()
+                    lpips_res = sum(lpips_list) / len(lpips_list)
+                    ssim_res = sum(ssim_list) / len(ssim_list)
+                    res['lpips'].append(lpips_res)
+                    res['fid'].append(fid_res)
+                    res['kid'].append(kid_res)
+                    res['ssim'].append(ssim_res)
+                    print('kid:', kid_res)
+                    print('fid:', fid_res)
+                    print('ssim:', ssim_res)
+                    print('lpips:', lpips_res)
+                    gt_list = []
+                    pred_list = []
+                    ssim_list = []
+                    lpips_res = []
             num += shape[0]
             print(num)
-
+    if opt.datasetting == 'paired':
+        log_dir = './logs/' + opt.test_name
+        if not os.path.exists(log_dir):
+            os.mkdir(log_dir)
+        with open(os.path.join(log_dir, 'res.log'), 'w') as f:
+            for k in res:
+                arr = res[k]
+                f.write('%s: %f\n' % (k, sum(arr) / len(arr)))
     print(f"Test time {time.time() - iter_start_time}")
 
 

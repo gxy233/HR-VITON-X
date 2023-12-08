@@ -6,6 +6,7 @@ from torchvision import models
 import os
 from torch.nn.utils import spectral_norm
 import numpy as np
+from vit_pytorch import ViT
 
 import functools
 
@@ -15,34 +16,72 @@ class ConditionGenerator(nn.Module):
         super(ConditionGenerator, self).__init__()
         self.warp_feature = opt.warp_feature
         self.out_layer_opt = opt.out_layer
-        
-        self.ClothEncoder = nn.Sequential(
-            ResBlock(input1_nc, ngf, norm_layer=norm_layer, scale='down'),  # 128
-            ResBlock(ngf, ngf * 2, norm_layer=norm_layer, scale='down'),  # 64
-            ResBlock(ngf * 2, ngf * 4, norm_layer=norm_layer, scale='down'),  # 32
-            ResBlock(ngf * 4, ngf * 4, norm_layer=norm_layer, scale='down'),  # 16
-            ResBlock(ngf * 4, ngf * 4, norm_layer=norm_layer, scale='down')  # 8
-        )
-        
-        self.PoseEncoder = nn.Sequential(
-            ResBlock(input2_nc, ngf, norm_layer=norm_layer, scale='down'),
-            ResBlock(ngf, ngf * 2, norm_layer=norm_layer, scale='down'),
-            ResBlock(ngf * 2, ngf * 4, norm_layer=norm_layer, scale='down'),
-            ResBlock(ngf * 4, ngf * 4, norm_layer=norm_layer, scale='down'),
-            ResBlock(ngf * 4, ngf * 4, norm_layer=norm_layer, scale='down')
-        )
+        self.enc_type = opt.enc_type
+
+        if self.enc_type == 'res':
+            self.ClothEncoder = nn.Sequential(
+                ResBlock(input1_nc, ngf, norm_layer=norm_layer, scale='down'),  # 128
+                ResBlock(ngf, ngf * 2, norm_layer=norm_layer, scale='down'),  # 64
+                ResBlock(ngf * 2, ngf * 4, norm_layer=norm_layer, scale='down'),  # 32
+                ResBlock(ngf * 4, ngf * 4, norm_layer=norm_layer, scale='down'),  # 16
+                ResBlock(ngf * 4, ngf * 4, norm_layer=norm_layer, scale='down')  # 8
+            )
+        else:
+            self.ClothEncoder = ViT(
+                image_size=(256, 192),
+                patch_size=32,
+                num_classes=18432,
+                channels=4,
+                dim=2048,
+                depth=6,
+                heads=8,
+                mlp_dim=4096,
+                dropout=0.1,
+                emb_dropout=0.1
+            )
+
+        if self.enc_type == 'res':
+            self.PoseEncoder = nn.Sequential(
+                ResBlock(input2_nc, ngf, norm_layer=norm_layer, scale='down'),
+                ResBlock(ngf, ngf * 2, norm_layer=norm_layer, scale='down'),
+                ResBlock(ngf * 2, ngf * 4, norm_layer=norm_layer, scale='down'),
+                ResBlock(ngf * 4, ngf * 4, norm_layer=norm_layer, scale='down'),
+                ResBlock(ngf * 4, ngf * 4, norm_layer=norm_layer, scale='down')
+            )
+        else:
+            self.PoseEncoder = ViT(
+                image_size=(256, 192),
+                patch_size=32,
+                num_classes=18432,
+                channels=16,
+                dim=2048,
+                depth=6,
+                heads=8,
+                mlp_dim=4096,
+                dropout=0.1,
+                emb_dropout=0.1
+            )
         
         self.conv = ResBlock(ngf * 4, ngf * 8, norm_layer=norm_layer, scale='same')
         
         if opt.warp_feature == 'T1':
             # in_nc -> skip connection + T1, T2 channel
-            self.SegDecoder = nn.Sequential(
-                ResBlock(ngf * 8, ngf * 4, norm_layer=norm_layer, scale='up'),  # 16
-                ResBlock(ngf * 4 * 2 + ngf * 4 , ngf * 4, norm_layer=norm_layer, scale='up'),  # 32
-                ResBlock(ngf * 4 * 2 + ngf * 4 , ngf * 2, norm_layer=norm_layer, scale='up'),  # 64
-                ResBlock(ngf * 2 * 2 + ngf * 4 , ngf, norm_layer=norm_layer, scale='up'),  # 128
-                ResBlock(ngf * 1 * 2 + ngf * 4, ngf, norm_layer=norm_layer, scale='up')  # 256
-            )
+            if self.enc_type == 'res':
+                self.SegDecoder = nn.Sequential(
+                    ResBlock(ngf * 8, ngf * 4, norm_layer=norm_layer, scale='up'),  # 16
+                    ResBlock(ngf * 4 * 2 + ngf * 4 , ngf * 4, norm_layer=norm_layer, scale='up'),  # 32
+                    ResBlock(ngf * 4 * 2 + ngf * 4 , ngf * 2, norm_layer=norm_layer, scale='up'),  # 64
+                    ResBlock(ngf * 2 * 2 + ngf * 4 , ngf, norm_layer=norm_layer, scale='up'),  # 128
+                    ResBlock(ngf * 1 * 2 + ngf * 4, ngf, norm_layer=norm_layer, scale='up')  # 256
+                )
+            else:
+                self.SegDecoder = nn.Sequential(
+                    ResBlock(ngf * 8, ngf * 4, norm_layer=norm_layer, scale='up'),  # 16
+                    ResBlock(ngf * 4 * 2, ngf * 4, norm_layer=norm_layer, scale='up'),  # 32
+                    ResBlock(ngf * 4 * 2, ngf * 2, norm_layer=norm_layer, scale='up'),  # 64
+                    ResBlock(ngf * 2 * 2 + ngf * 2, ngf, norm_layer=norm_layer, scale='up'),  # 128
+                    ResBlock(ngf * 1 * 2 + ngf * 3, ngf, norm_layer=norm_layer, scale='up')  # 256
+                )
         if opt.warp_feature == 'encoder':
             # in_nc -> [x, skip_connection, warped_cloth_encoder_feature(E1)]
             self.SegDecoder = nn.Sequential(
@@ -102,22 +141,39 @@ class ConditionGenerator(nn.Module):
         # warped_grid_list = []
 
         # Feature Pyramid Network
-        for i in range(5):
-            if i == 0:
-                E1_list.append(self.ClothEncoder[i](input1))
-                E2_list.append(self.PoseEncoder[i](input2))
-            else:
-                E1_list.append(self.ClothEncoder[i](E1_list[i - 1]))
-                E2_list.append(self.PoseEncoder[i](E2_list[i - 1]))
+        if self.enc_type == 'res':
+            for i in range(5):
+                if i == 0:
+                    E1_list.append(self.ClothEncoder[i](input1))
+                    E2_list.append(self.PoseEncoder[i](input2))
+                else:
+                    E1_list.append(self.ClothEncoder[i](E1_list[i - 1]))
+                    E2_list.append(self.PoseEncoder[i](E2_list[i - 1]))
+        else:
+            b_size = input1.shape[0]
+            E1 = self.ClothEncoder(input1)
+            E1 = E1.reshape(b_size, -1, 8, 6)
+            E2 = self.PoseEncoder(input2)
+            E2 = E2.reshape(b_size, -1, 8, 6)
+
 
         # Compute Clothflow
         for i in range(5):
-            N, _, iH, iW = E1_list[4 - i].size()
+            if self.enc_type == 'vit':
+                N, _, _, _ = E1.size()
+                iH = 8*(2**i)
+                iW = 6*(2**i)
+            else:
+                N, _, iH, iW = E1_list[4 - i].size()
             grid = make_grid(N, iH, iW,opt)
 
             if i == 0:
-                T1 = E1_list[4 - i]  # (ngf * 4) x 8 x 6
-                T2 = E2_list[4 - i]
+                if self.enc_type == 'res':
+                    T1 = E1_list[4 - i]  # (ngf * 4) x 8 x 6
+                    T2 = E2_list[4 - i]
+                else:
+                    T1 = E1  # (ngf * 4) x 8 x 6
+                    T2 = E2
                 E4 = torch.cat([T1, T2], 1)
                 
                 flow = self.flow_conv[i](self.normalize(E4)).permute(0, 2, 3, 1)
@@ -127,10 +183,15 @@ class ConditionGenerator(nn.Module):
                 x = self.SegDecoder[i](x)
                 
             else:
-                T1 = F.interpolate(T1, scale_factor=2, mode=upsample) + self.conv1[4 - i](E1_list[4 - i])
-                T2 = F.interpolate(T2, scale_factor=2, mode=upsample) + self.conv2[4 - i](E2_list[4 - i]) 
+                if self.enc_type == 'res':
+                    T1 = F.interpolate(T1, scale_factor=2, mode=upsample) + self.conv1[4 - i](E1_list[4 - i])
+                    T2 = F.interpolate(T2, scale_factor=2, mode=upsample) + self.conv2[4 - i](E2_list[4 - i])
+                else:
+                    T1 = F.interpolate(T1, scale_factor=2, mode=upsample)
+                    T2 = F.interpolate(T2, scale_factor=2, mode=upsample)
+
                 
-                flow = F.interpolate(flow_list[i - 1].permute(0, 3, 1, 2), scale_factor=2, mode=upsample).permute(0, 2, 3, 1)  # upsample n-1 flow
+                flow = F.interpolate(flow_list[i - 1].permute(0, 3, 1, 2), scale_factor=2, mode=upsample).permute(0, 2, 3, 1)  # upsample n-1 flo
                 flow_norm = torch.cat([flow[:, :, :, 0:1] / ((iW/2 - 1.0) / 2.0), flow[:, :, :, 1:2] / ((iH/2 - 1.0) / 2.0)], 3)
                 warped_T1 = F.grid_sample(T1, flow_norm + grid, padding_mode='border')
                 
@@ -138,7 +199,10 @@ class ConditionGenerator(nn.Module):
                 flow_list.append(flow)
 
                 if self.warp_feature == 'T1':
-                    x = self.SegDecoder[i](torch.cat([x, E2_list[4-i], warped_T1], 1))
+                    if self.enc_type == 'res':
+                        x = self.SegDecoder[i](torch.cat([x, E2_list[4-i], warped_T1], 1))
+                    else:
+                        x = self.SegDecoder[i](torch.cat([x, warped_T1], 1))
                 if self.warp_feature == 'encoder':
                     warped_E1 = F.grid_sample(E1_list[4-i], flow_norm + grid, padding_mode='border')
                     x = self.SegDecoder[i](torch.cat([x, E2_list[4-i], warped_E1], 1))

@@ -22,7 +22,7 @@ def get_opt():
     parser.add_argument('-b', '--batch-size', type=int, default=8)
     parser.add_argument('--fp16', action='store_true', help='use amp')
 
-    parser.add_argument("--dataroot", default="./data/zalando-hd-resize")
+    parser.add_argument("--dataroot", default="./data")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
     parser.add_argument("--datasetting", default="paired")
@@ -38,6 +38,7 @@ def get_opt():
     parser.add_argument("--shuffle", action='store_true', help='shuffle input data')
     parser.add_argument("--semantic_nc", type=int, default=13)
     parser.add_argument("--output_nc", type=int, default=13)
+    parser.add_argument("--enc_type", type=str, default='res')
     
     # network
     parser.add_argument("--warp_feature", choices=['encoder', 'T1'], default="T1")
@@ -57,6 +58,7 @@ def get_opt():
     parser.add_argument('--num_D', type=int, default=2, help='Generator ngf')
     parser.add_argument('--spectral', action='store_true', help="Apply spectral normalization to D")
     parser.add_argument('--norm_const', type=float, help='Normalizing constant for rejection sampling')
+    parser.add_argument('--cuda', default=True, help='cuda or cpu')
     
     opt = parser.parse_args()
     return opt
@@ -81,7 +83,7 @@ def test(opt, test_loader, board, tocg, D=None):
         # input1
         c_paired = inputs['cloth'][opt.datasetting].cuda()
         cm_paired = inputs['cloth_mask'][opt.datasetting].cuda()
-        cm_paired = torch.FloatTensor((cm_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+        cm_paired = torch.FloatTensor((cm_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
         # input2
         parse_agnostic = inputs['parse_agnostic'].cuda()
         densepose = inputs['densepose'].cuda()
@@ -100,10 +102,10 @@ def test(opt, test_loader, board, tocg, D=None):
             input2 = torch.cat([parse_agnostic, densepose], 1)
 
             # forward
-            flow_list, fake_segmap, warped_cloth_paired, warped_clothmask_paired = tocg(input1, input2)
+            flow_list, fake_segmap, warped_cloth_paired, warped_clothmask_paired = tocg(opt, input1, input2)
             
             # warped cloth mask one hot 
-            warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+            warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
             
             if opt.clothmask_composition != 'no_composition':
                 if opt.clothmask_composition == 'detach':
@@ -180,9 +182,9 @@ def main():
     else:
         D = None
     # Load Checkpoint
-    load_checkpoint(tocg, opt.tocg_checkpoint)
+    load_checkpoint(tocg, opt.tocg_checkpoint, opt)
     if not opt.D_checkpoint == '' and os.path.exists(opt.D_checkpoint):
-        load_checkpoint(D, opt.D_checkpoint)
+        load_checkpoint(D, opt.D_checkpoint, opt)
     # Train
     test(opt, test_loader, board, tocg, D=D)
 

@@ -49,6 +49,8 @@ def get_opt():
     parser.add_argument("--radius", type=int, default=20)
     parser.add_argument("--grid_size", type=int, default=5)
 
+    parser.add_argument("--enc_type", type=str, default='res')
+
     parser.add_argument('--tensorboard_dir', type=str, default='tensorboard', help='save tensorboard infos')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='save checkpoint infos')
     parser.add_argument('--tocg_checkpoint', type=str, help='condition generator checkpoint')
@@ -212,10 +214,10 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                 input2 = torch.cat([input_parse_agnostic_down, densepose_down], 1)
 
                 # forward
-                flow_list, fake_segmap, _, warped_clothmask_paired = tocg(input1, input2)
+                flow_list, fake_segmap, _, warped_clothmask_paired = tocg(opt, input1, input2)
                 
                 # warped cloth mask one hot 
-                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
                 
                 if opt.clothmask_composition != 'no_composition':
                     if opt.clothmask_composition == 'detach':
@@ -408,10 +410,10 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                     input2 = torch.cat([input_parse_agnostic_down, densepose_down], 1)
 
                     # forward
-                    flow_list, fake_segmap, _, warped_clothmask_paired = tocg(input1, input2)
+                    flow_list, fake_segmap, _, warped_clothmask_paired = tocg(opt, input1, input2)
                     
                     # warped cloth mask one hot 
-                    warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                    warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
                     
                     if opt.clothmask_composition != 'no_composition':
                         if opt.clothmask_composition == 'detach':
@@ -514,10 +516,10 @@ def train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generato
                             input2 = torch.cat([input_parse_agnostic_down, densepose_down], 1)
 
                             # forward
-                            flow_list, fake_segmap, _, warped_clothmask_paired = tocg(input1, input2)
+                            flow_list, fake_segmap, _, warped_clothmask_paired = tocg(opt, input1, input2)
                             
                             # warped cloth mask one hot 
-                            warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+                            warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
                             
                             if opt.clothmask_composition != 'no_composition':
                                 if opt.clothmask_composition == 'detach':
@@ -636,7 +638,7 @@ def main():
         input2_nc = opt.semantic_nc + 3  # parse_agnostic + densepose
         tocg = ConditionGenerator(opt, input1_nc=input1_nc, input2_nc=input2_nc, output_nc=13, ngf=96, norm_layer=nn.BatchNorm2d)
         # Load Checkpoint
-        load_checkpoint(tocg, opt.tocg_checkpoint)
+        load_checkpoint(tocg, opt.tocg_checkpoint, opt)
 
     # Generator model
     generator = SPADEGenerator(opt, 3+3+3)
@@ -652,8 +654,8 @@ def main():
 
     # Load Checkpoint
     if not opt.gen_checkpoint == '' and os.path.exists(opt.gen_checkpoint):
-        load_checkpoint(generator, opt.gen_checkpoint)
-        load_checkpoint(discriminator, opt.dis_checkpoint)
+        load_checkpoint(generator, opt.gen_checkpoint, opt)
+        load_checkpoint(discriminator, opt.dis_checkpoint, opt)
 
     # Train
     train(opt, train_loader, test_loader, test_vis_loader, board, tocg, generator, discriminator, model)

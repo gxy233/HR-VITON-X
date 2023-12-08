@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as Transforms
 from torchvision.models.inception import inception_v3
+from torchmetrics.image.kid import KernelInceptionDistance
 
 import eval_models as models
 
@@ -24,6 +25,14 @@ def get_opt():
 
     opt = parser.parse_args()
     return opt
+
+def get_kid(pred_list, gt_list):
+    size = len(pred_list)
+    kid = KernelInceptionDistance(subset_size=size)
+    for i in range(size):
+        kid.update(pred_list[i], real=False)
+        kid.update(gt_list[i], real=True)
+    return kid.compute()
 
 def Evaluation(opt, pred_list, gt_list):
     T1 = Transforms.ToTensor()
