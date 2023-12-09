@@ -12,7 +12,7 @@ Clone this repository:
 
 ```bash
 git clone 
-cd ./
+cd ./HR-VITON-X
 ```
 
 Install PyTorch and other dependencies:
