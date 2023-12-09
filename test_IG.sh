@@ -21,7 +21,7 @@
 #     --output_dir ./gan1_test_out \
 #     --datasetting paired \
 #     --enc_type res \
-#     --gen_checkpoint ./checkpoints/image_generator_distill/gen_step_040000.pth \
+#     --gen_checkpoint ./checkpoints/image_generator_tea/gen_step_040000.pth \
 #     --metric_freq 50 \
 #     --tocg_checkpoint ./checkpoints/condition_generator_distilled/tocg_final.pth \
 #     --save_img False
