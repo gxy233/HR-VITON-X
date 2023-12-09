@@ -25,6 +25,13 @@ pip install -r requirements.txt
 
 Please then unzip the data into `./data`
 
+Please note that when doing testing, if it raise `OSError: libtorch_hip.so: cannot open shared object file: No such file or directory`, please do:
+
+```
+pip uninstall torchaudio
+pip install torchaudio==0.10.0
+```
+
 ### Training
 
 There are 2 stages of training: train the condition generator and train the image generator.
