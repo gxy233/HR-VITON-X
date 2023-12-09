@@ -1,0 +1,11 @@
+python3 train_condition_vit.py \
+  --cuda True \
+  --gpu_ids 0 \
+  --name vit_200k \
+  --keep_step 200000 \
+  --enc_type vit \
+  --Ddownx2 \
+  --Ddropout \
+  --lasttvonly \
+  --interflowloss \
+  --occlusion

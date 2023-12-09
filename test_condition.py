@@ -7,6 +7,7 @@ import argparse
 import os
 import time
 from cp_dataset import CPDatasetTest, CPDataLoader
+from networks_distill import SConditionGenerator, load_checkpoint, define_D
 from networks import ConditionGenerator, load_checkpoint, define_D
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
@@ -21,8 +22,10 @@ def get_opt():
     parser.add_argument('-j', '--workers', type=int, default=4)
     parser.add_argument('-b', '--batch-size', type=int, default=8)
     parser.add_argument('--fp16', action='store_true', help='use amp')
-
-    parser.add_argument("--dataroot", default="./data/zalando-hd-resize")
+    parser.add_argument('--cuda', default=True, help='cuda or cpu')
+    parser.add_argument('--modeltype', type=str, default='ori', choices=['ori', 'compressed','vit'])
+    
+    parser.add_argument("--dataroot", default="./data")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
     parser.add_argument("--datasetting", default="paired")
@@ -71,7 +74,7 @@ def test(opt, test_loader, board, tocg, D=None):
         D.eval()
     
     os.makedirs(os.path.join('./output', opt.tocg_checkpoint.split('/')[-2], opt.tocg_checkpoint.split('/')[-1],
-                             opt.datamode, opt.datasetting, 'multi-task'), exist_ok=True)
+                             opt.datamode, opt.datasetting, 'multi-task' ), exist_ok=True)
     num = 0
     iter_start_time = time.time()
     if D is not None:
@@ -81,7 +84,7 @@ def test(opt, test_loader, board, tocg, D=None):
         # input1
         c_paired = inputs['cloth'][opt.datasetting].cuda()
         cm_paired = inputs['cloth_mask'][opt.datasetting].cuda()
-        cm_paired = torch.FloatTensor((cm_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+        cm_paired = torch.FloatTensor((cm_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
         # input2
         parse_agnostic = inputs['parse_agnostic'].cuda()
         densepose = inputs['densepose'].cuda()
@@ -100,10 +103,10 @@ def test(opt, test_loader, board, tocg, D=None):
             input2 = torch.cat([parse_agnostic, densepose], 1)
 
             # forward
-            flow_list, fake_segmap, warped_cloth_paired, warped_clothmask_paired = tocg(input1, input2)
+            flow_list, fake_segmap, warped_cloth_paired, warped_clothmask_paired = tocg(opt,input1, input2)
             
             # warped cloth mask one hot 
-            warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+            warped_cm_onehot = torch.FloatTensor((warped_clothmask_paired.detach().cpu().numpy() > 0.5).astype(float)).cuda()
             
             if opt.clothmask_composition != 'no_composition':
                 if opt.clothmask_composition == 'detach':
@@ -137,6 +140,10 @@ def test(opt, test_loader, board, tocg, D=None):
                             (im_c[i].cpu() / 2 + 0.5), parse_cloth_mask[i].cpu().expand(3, -1, -1), (warped_cloth_paired[i].cpu().detach() / 2 + 0.5), (warped_cm_onehot[i].cpu().detach()).expand(3, -1, -1),
                             visualize_segmap(label.cpu(), batch=i), visualize_segmap(fake_segmap.cpu(), batch=i), (im[i]/2 +0.5), (misalign[i].cpu().detach()).expand(3, -1, -1)],
                                 nrow=4)
+            # print(os.path.join('./output', opt.tocg_checkpoint.split('/')[-2], opt.tocg_checkpoint.split('/')[-1],
+            #                  opt.datamode, opt.datasetting, 'multi-task',
+            #                  (inputs['c_name']['paired'][i].split('.')[0] + '_' +
+            #                   inputs['c_name']['unpaired'][i].split('.')[0] + '.png')))
             save_image(grid, os.path.join('./output', opt.tocg_checkpoint.split('/')[-2], opt.tocg_checkpoint.split('/')[-1],
                              opt.datamode, opt.datasetting, 'multi-task',
                              (inputs['c_name']['paired'][i].split('.')[0] + '_' +
@@ -172,22 +179,62 @@ def main():
     # Model
     input1_nc = 4  # cloth + cloth-mask
     input2_nc = opt.semantic_nc + 3  # parse_agnostic + densepose
-    tocg = ConditionGenerator(opt, input1_nc=input1_nc, input2_nc=input2_nc, output_nc=opt.output_nc, ngf=96, norm_layer=nn.BatchNorm2d)
-    if not opt.D_checkpoint == '' and os.path.exists(opt.D_checkpoint):
-        if opt.norm_const is None:
-            raise NotImplementedError
-        D = define_D(input_nc=input1_nc + input2_nc + opt.output_nc, Ddownx2 = opt.Ddownx2, Ddropout = opt.Ddropout, n_layers_D=3, spectral = opt.spectral, num_D = opt.num_D)
-    else:
-        D = None
-    # Load Checkpoint
-    load_checkpoint(tocg, opt.tocg_checkpoint)
-    if not opt.D_checkpoint == '' and os.path.exists(opt.D_checkpoint):
-        load_checkpoint(D, opt.D_checkpoint)
-    # Train
-    test(opt, test_loader, board, tocg, D=D)
+    
+    
+    if opt.modeltype=='ori':
 
+        tocg = ConditionGenerator(opt, input1_nc=input1_nc, input2_nc=input2_nc, output_nc=opt.output_nc, ngf=96, norm_layer=nn.BatchNorm2d)
+        if not opt.D_checkpoint == '' and os.path.exists(opt.D_checkpoint):
+            if opt.norm_const is None:
+                raise NotImplementedError
+            D = define_D(input_nc=input1_nc + input2_nc + opt.output_nc, Ddownx2 = opt.Ddownx2, Ddropout = opt.Ddropout, n_layers_D=3, spectral = opt.spectral, num_D = opt.num_D)
+        else:
+            D = None
+        # Load Checkpoint
+        load_checkpoint(tocg, opt.tocg_checkpoint,opt)
+        if not opt.D_checkpoint == '' and os.path.exists(opt.D_checkpoint):
+            load_checkpoint(D, opt.D_checkpoint)
+        # Train
+        test(opt, test_loader, board, tocg, D=D)
+
+
+        
+    if opt.modeltype=='compressed':
+
+        tocg = SConditionGenerator(opt, input1_nc=input1_nc, input2_nc=input2_nc, output_nc=opt.output_nc, ngf=96, norm_layer=nn.BatchNorm2d)
+        if not opt.D_checkpoint == '' and os.path.exists(opt.D_checkpoint):
+            if opt.norm_const is None:
+                raise NotImplementedError
+            D = define_D(input_nc=input1_nc + input2_nc + opt.output_nc, Ddownx2 = opt.Ddownx2, Ddropout = opt.Ddropout, n_layers_D=3, spectral = opt.spectral, num_D = opt.num_D)
+        else:
+            D = None
+        # Load Checkpoint
+        load_checkpoint(tocg, opt.tocg_checkpoint,opt)
+        if not opt.D_checkpoint == '' and os.path.exists(opt.D_checkpoint):
+            load_checkpoint(D, opt.D_checkpoint)
+        # Train
+        test(opt, test_loader, board, tocg, D=D)
+
+   
+
+    # if opt.modeltype=='vit':
+
+    #         tocg = SConditionGenerator(opt, input1_nc=input1_nc, input2_nc=input2_nc, output_nc=opt.output_nc, ngf=96, norm_layer=nn.BatchNorm2d)
+    #         if not opt.D_checkpoint == '' and os.path.exists(opt.D_checkpoint):
+    #             if opt.norm_const is None:
+    #                 raise NotImplementedError
+    #             D = define_D(input_nc=input1_nc + input2_nc + opt.output_nc, Ddownx2 = opt.Ddownx2, Ddropout = opt.Ddropout, n_layers_D=3, spectral = opt.spectral, num_D = opt.num_D)
+    #         else:
+    #             D = None
+    #         # Load Checkpoint
+    #         load_checkpoint(tocg, opt.tocg_checkpoint,opt)
+    #         if not opt.D_checkpoint == '' and os.path.exists(opt.D_checkpoint):
+    #             load_checkpoint(D, opt.D_checkpoint)
+    #         # Train
+    #         test(opt, test_loader, board, tocg, D=D)
+
+    #         print("Finished testing!")
+    
     print("Finished testing!")
-
-
 if __name__ == "__main__":
     main()

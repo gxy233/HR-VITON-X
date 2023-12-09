@@ -1,3 +1,13 @@
+
+import os
+import sys
+
+current_file_path = os.path.abspath(__file__)
+current_dir = os.path.dirname(current_file_path)
+parent_dir = os.path.dirname(current_dir)
+print(parent_dir)
+sys.path.append(parent_dir)
+
 import torch
 import torch.nn as nn
 
@@ -13,7 +23,6 @@ from networks import ConditionGenerator, load_checkpoint, make_grid
 from networks_distill import SConditionGenerator, load_checkpoint, make_grid
 from network_generator import SPADEGenerator
 from network_generator_distill import SSPADEGenerator
-from tensorboardX import SummaryWriter
 from utils import *
 import torchvision.transforms as Transforms
 from torchmetrics.image.kid import KernelInceptionDistance
@@ -38,20 +47,14 @@ def get_opt():
     parser.add_argument('--fp16', action='store_true', help='use amp')
     # Cuda availability
     parser.add_argument('--cuda',default=False, help='cuda or cpu')
-    parser.add_argument("--enc_type", type=str, default='res')
-    parser.add_argument('--metric_freq', type=int, default=10)
 
-    parser.add_argument('--test_name', type=str, default='test', help='test name')
-    parser.add_argument('--save_img', default=True, help='save image or not')
-    parser.add_argument("--dataroot", default="./data")
+    parser.add_argument("--dataroot", default="../data")
     parser.add_argument("--datamode", default="test")
     parser.add_argument("--data_list", default="test_pairs.txt")
-    parser.add_argument("--output_dir", type=str, default="./Output")
     parser.add_argument("--datasetting", default="unpaired")
     parser.add_argument("--fine_width", type=int, default=768)
     parser.add_argument("--fine_height", type=int, default=1024)
 
-    parser.add_argument('--tensorboard_dir', type=str, default='./data/zalando-hd-resize/tensorboard', help='save tensorboard infos')
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='save checkpoint infos')
     parser.add_argument('--tocg_checkpoint', type=str, default=None, help='tocg checkpoint')
     parser.add_argument('--gen_checkpoint', type=str, default=None, help='G checkpoint')
@@ -82,7 +85,12 @@ def get_opt():
                         help="If 'more', adds upsampling layer between the two middle resnet blocks. If 'most', also add one more upsampling + resnet layer at the end of the generator")
 
     # model type
-    parser.add_argument("--modeltype", type=str, choices=['ori', 'gan1', 'gan2','vit'], default='ori')
+    parser.add_argument("--modeltype", type=str, choices=['ori', 'gan1', 'gan2','vit'], default='ori',help='choose model type')
+    
+    
+    # test infer time config
+    parser.add_argument('--num_img', type=int, default=10,help='number of image to infer')
+    
     
     opt = parser.parse_args()
     return opt
@@ -109,34 +117,15 @@ def test(opt, test_loader, tocg, generator):
     tocg.eval()
     generator.eval()
     
-  
-    if opt.save_img=='True':
-        if opt.output_dir is not None:
-            output_dir = opt.output_dir
-        else:
-            output_dir = os.path.join('./output', opt.test_name,
-                                opt.datamode, opt.datasetting, 'generator', 'output')
-        grid_dir = os.path.join('./output', opt.test_name,
-                                opt.datamode, opt.datasetting, 'generator', 'grid')
-        
-        os.makedirs(grid_dir, exist_ok=True)
-        
-        os.makedirs(output_dir, exist_ok=True)
-        
+    
     num = 0
     iter_start_time = time.time()
-    gt_list = []
-    pred_list = []
-    ssim_list = []
-    lpips_list = []
-    res = {'lpips':[],
-           'ssim':[],
-           'kid': [],
-           'fid': []}
-    lpips_func = LearnedPerceptualImagePatchSimilarity(net_type='alex', normalize=True)
+    count=0
     with torch.no_grad():
         for inputs in test_loader.data_loader:
-
+            if count>=opt.num_img:
+                break
+            count=count+1
             if opt.cuda :
                 pose_map = inputs['pose'].cuda()
                 pre_clothes_mask = inputs['cloth_mask'][opt.datasetting].cuda()
@@ -160,11 +149,11 @@ def test(opt, test_loader, tocg, generator):
                 input_label, input_parse_agnostic = label, parse_agnostic
                 pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(float))
             # down
-            pose_map_down = F.interpolate(pose_map, size=(256, 192), mode='bilinear')
+           
             pre_clothes_mask_down = F.interpolate(pre_clothes_mask, size=(256, 192), mode='nearest')
-            input_label_down = F.interpolate(input_label, size=(256, 192), mode='bilinear')
+   
             input_parse_agnostic_down = F.interpolate(input_parse_agnostic, size=(256, 192), mode='nearest')
-            agnostic_down = F.interpolate(agnostic, size=(256, 192), mode='nearest')
+          
             clothes_down = F.interpolate(clothes, size=(256, 192), mode='bilinear')
             densepose_down = F.interpolate(densepose, size=(256, 192), mode='bilinear')
 
@@ -236,75 +225,11 @@ def test(opt, test_loader, tocg, generator):
             
 
             output = generator(torch.cat((agnostic, densepose, warped_cloth), dim=1), parse)
-            # visualize
-            if opt.save_img=='True':
-                unpaired_names = []
-                for i in range(shape[0]):
-                    grid = make_image_grid([(clothes[i].cpu() / 2 + 0.5), (pre_clothes_mask[i].cpu()).expand(3, -1, -1), visualize_segmap(parse_agnostic.cpu(), batch=i), ((densepose.cpu()[i]+1)/2),
-                                            (warped_cloth[i].cpu().detach() / 2 + 0.5), (warped_clothmask[i].cpu().detach()).expand(3, -1, -1), visualize_segmap(fake_parse_gauss.cpu(), batch=i),
-                                            (pose_map[i].cpu()/2 +0.5), (warped_cloth[i].cpu()/2 + 0.5), (agnostic[i].cpu()/2 + 0.5),
-                                            (im[i]/2 +0.5), (output[i].cpu()/2 +0.5)],
-                                            nrow=4)
-                    unpaired_name = (inputs['c_name']['paired'][i].split('.')[0] + '_' + inputs['c_name'][opt.datasetting][i].split('.')[0] + '.png')
-                    
-                    save_image(grid, os.path.join(grid_dir, unpaired_name))
-                    unpaired_names.append(unpaired_name)
-                
-                # save output
-                save_images(output, unpaired_names, output_dir)
-            if opt.datasetting == 'paired':
-                real = save_images(im, 'any', '')
-                pred = save_images(output, 'any', '')
-                real_np = np.asarray(real.convert('L'))
-                pred_np = np.asarray(pred.convert('L'))
-                T1 = Transforms.PILToTensor()
-                T3 = Transforms.Compose([Transforms.Resize((299, 299)),
-                        Transforms.ToTensor()])
-                pred = T3(pred)
-                real = T3(real)
-                gt_list.append(real)
-                pred_list.append(pred)
-                ssim_list.append(ssim(real_np, pred_np, data_range=255, gaussian_weights=True, use_sample_covariance=False))
-                lpips_list.append(lpips_func(pred.unsqueeze(0), real.unsqueeze(0)))
 
-                if len(gt_list) == opt.metric_freq:
-                    print('calculating metric')
-                    size = len(pred_list)
-                    kid = KernelInceptionDistance(subset_size=size, normalize=True)
-                    fid = FrechetInceptionDistance(normalize=True)
-                    real_tensor = torch.stack(gt_list, dim=0)
-                    pred_tensor = torch.stack(pred_list, dim=0)
-                    kid.update(real_tensor, real=True)
-                    kid.update(pred_tensor, real=False)
-                    fid.update(real_tensor, real=True)
-                    fid.update(pred_tensor, real=False)
-                    kid_res = kid.compute()[1] * 1e6
-                    fid_res = fid.compute()
-                    lpips_res = sum(lpips_list) / len(lpips_list)
-                    ssim_res = sum(ssim_list) / len(ssim_list)
-                    res['lpips'].append(lpips_res)
-                    res['fid'].append(fid_res)
-                    res['kid'].append(kid_res)
-                    res['ssim'].append(ssim_res)
-                    print('kid:', kid_res)
-                    print('fid:', fid_res)
-                    print('ssim:', ssim_res)
-                    print('lpips:', lpips_res)
-                    gt_list = []
-                    pred_list = []
-                    ssim_list = []
-                    lpips_res = []
+            
             num += shape[0]
             print(num)
-
-    log_dir = './logs/' + opt.test_name
-    if not os.path.exists(log_dir):
-        os.mkdir(log_dir)
-    with open(os.path.join(log_dir, 'res.log'), 'w') as f:
-        for k in res:
-            arr = res[k]
-            f.write('%s: %f\n' % (k, sum(arr) / len(arr)))
-    print(f"Test time {time.time() - iter_start_time}")
+    print(f"Test time for {opt.num_img} image:{time.time() - iter_start_time}")
 
 
 def main():
