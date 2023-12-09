@@ -243,6 +243,7 @@ def test(opt, test_loader, tocg, generator):
                 
             # save output
             save_images(output, unpaired_names, output_dir)
+            # calculating the metrics for the model
             if opt.datasetting == 'paired':
                 real = save_images(im, 'any', '')
                 pred = save_images(output, 'any', '')
@@ -288,6 +289,9 @@ def test(opt, test_loader, tocg, generator):
             num += shape[0]
             print(num)
     if opt.datasetting == 'paired':
+        # make sure the directory exist
+        if not os.path.exists('./logs'):
+            os.mkdir('./logs')
         log_dir = './logs/' + opt.test_name
         if not os.path.exists(log_dir):
             os.mkdir(log_dir)
