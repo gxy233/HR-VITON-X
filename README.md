@@ -4,6 +4,9 @@
 
 The dataset we use can be downloaded here: https://www.dropbox.com/s/10bfat0kg4si1bu/zalando-hd-resized.zip?dl=0.
 
+## download checkpoints
+https://drive.google.com/drive/folders/1tUpbc7tUs85PQ6vLL0fxcSRAuCcsG0lm?usp=drive_link
+
 ## Code usage
 
 ### Installation
@@ -34,7 +37,7 @@ pip install torchaudio==0.10.0
 
 ### Training
 
-There are 2 stages of training: train the condition generator and train the image generator.
+There are 2 stages of training: train the condition generator and train the image generator. Before training the image generator, make sure `alex.pth` (you can find it in the google drive above) is downloaded to `./eval_models/weights/v0.1`.
 
 #### Original HR-VITON
 
@@ -95,5 +98,4 @@ cd util
 
 Our code is adapted from [HR-VITON](https://github.com/sangyun884/HR-VITON), originally developed and maintained by Sangyun Lee and colleagues. We have made modifications to suit our specific needs, but the core HR-VITON framework laid the groundwork for our development. We appreciate the efforts of the original authors in creating a resource that has significantly contributed to our project.
 
-## download checkpoints
-https://drive.google.com/drive/folders/1tUpbc7tUs85PQ6vLL0fxcSRAuCcsG0lm?usp=drive_link
+
