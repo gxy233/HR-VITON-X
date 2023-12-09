@@ -105,8 +105,8 @@ def get_opt():
     parser.add_argument('--val_count', type=int, default='1000')
     parser.add_argument('--spectral', action='store_true', help="Apply spectral normalization to D")
     parser.add_argument('--occlusion', action='store_true', help="Occlusion handling")
-    parser.add_argument('--TConditionG_ckpt',type=str, default='/home/ubuntu/gxy/VITON-HD/HR-VITON/checkpoints/conditionG-tea/mtviton.pth', help=' TCotrainexit(nditionG checkpoint ')
-    parser.add_argument('--TConditionD_ckpt',type=str, default='/home/ubuntu/gxy/VITON-HD/HR-VITON/checkpoints/conditionD-tea/discriminator_mtviton.pth', help=' TConditionD checkpoint ')
+    parser.add_argument('--TConditionG_ckpt',type=str, default='./checkpoints/conditionG-tea/mtviton.pth', help=' TCotrainexit(nditionG checkpoint ')
+    parser.add_argument('--TConditionD_ckpt',type=str, default='./checkpoints/conditionD-tea/discriminator_mtviton.pth', help=' TConditionD checkpoint ')
     opt = parser.parse_args()
     return opt
 
