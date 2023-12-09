@@ -7,4 +7,6 @@ python3 train_condition_distill.py \
     --Ddropout \
     --lasttvonly \
     --interflowloss \
-    --occlusion
+    --occlusion \
+    --TConditionG_ckpt ./checkpoints/conditionG-tea/mtviton.pth \
+    --TConditionD_ckpt ./checkpoints/conditionD-tea/discriminator_mtviton.pth
