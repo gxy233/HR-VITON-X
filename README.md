@@ -94,3 +94,6 @@ cd util
 ## Acknowledge
 
 Our code is adapted from [HR-VITON](https://github.com/sangyun884/HR-VITON), originally developed and maintained by Sangyun Lee and colleagues. We have made modifications to suit our specific needs, but the core HR-VITON framework laid the groundwork for our development. We appreciate the efforts of the original authors in creating a resource that has significantly contributed to our project.
+
+## download checkpoints
+https://drive.google.com/drive/folders/1tUpbc7tUs85PQ6vLL0fxcSRAuCcsG0lm?usp=drive_link
