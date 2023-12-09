@@ -39,6 +39,8 @@ pip install torchaudio==0.10.0
 
 There are 2 stages of training: train the condition generator and train the image generator. Before training the image generator, make sure `alex.pth` (you can find it in the google drive above) is downloaded to `./eval_models/weights/v0.1`.
 
+By default, please put the downloaded checkpoints to the directory of the same name as the directory in Google drive above. Or, please check the checkpoint path in `.sh` files. 
+
 #### Original HR-VITON
 
 train the condition generator: `./train_CG_hr-viton.sh`
