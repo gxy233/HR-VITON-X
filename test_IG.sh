@@ -7,9 +7,9 @@
 #     --output_dir ./gan1_test_out \
 #     --datasetting paired \
 #     --enc_type res \
-#     --gen_checkpoint ./image_generator/gen_model_final.pth \
+#     --gen_checkpoint ./image_generator_distill/gen_model_final.pth \
 #     --metric_freq 50 \
-#     --tocg_checkpoint ./checkpoints/condition_generator_distilled/tocg_final.pth \
+#     --tocg_checkpoint ./checkpoints/condition_generator_distill/tocg_final.pth \
 #     --save_img False
 
 # test compressed gan2
@@ -21,9 +21,9 @@
 #     --output_dir ./gan1_test_out \
 #     --datasetting paired \
 #     --enc_type res \
-#     --gen_checkpoint ./checkpoints/image_generator_tea/gen_step_040000.pth \
+#     --gen_checkpoint ./checkpoints/image_generator_tea/gen.pth \
 #     --metric_freq 50 \
-#     --tocg_checkpoint ./checkpoints/condition_generator_distilled/tocg_final.pth \
+#     --tocg_checkpoint ./checkpoints/condition_generator_distill/tocg_final.pth \
 #     --save_img False
 
 # test vit
@@ -35,9 +35,9 @@ python test_generator.py \
     --output_dir ./vit_test_out \
     --datasetting paired \
     --enc_type vit \
-    --gen_checkpoint ./checkpoints/image_generator/gen_model_final.pth \
+    --gen_checkpoint ./checkpoints/image_generator_vit/gen_model_final.pth \
     --metric_freq 50 \
-    --tocg_checkpoint ./checkpoints/image_generator_vit/gen_model_final.pth \
+    --tocg_checkpoint ./checkpoints/condition_generator_vit/tocg_step_200000.pth \
     --save_img False
 
 # test ori
@@ -49,7 +49,7 @@ python test_generator.py \
 #     --output_dir ./ori_test_out \
 #     --datasetting paired \
 #     --enc_type res \
-#     --gen_checkpoint ./checkpoints/image_generator/gen_model_final.pth \
+#     --gen_checkpoint ./checkpoints/image_generator_tea/gen.pth \
 #     --metric_freq 50 \
 #     --tocg_checkpoint ./checkpoints/conditionG-tea/mtviton.pth \
 #     --save_img False
